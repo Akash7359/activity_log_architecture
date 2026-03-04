@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fintech Activity Logging — Architecture & SIEM Reference</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* =========================================
+   DESIGN TOKENS
+========================================= */
+:root {
+  --bg:         #07090f;
+  --bg2:        #0d1120;
+  --surface:    #111827;
+  --surface2:   #1a2235;
+  --border:     #1f2d45;
+  --accent:     #00d4ff;
+  --accent2:    #7c3aed;
+  --accent3:    #10b981;
+  --warn:       #f59e0b;
+  --danger:     #ef4444;
+  --text:       #e2e8f0;
+  --muted:      #64748b;
+  --code-bg:    #060d18;
+  --glow:       rgba(0,212,255,0.15);
+}
+
+/* =========================================
+   RESET & BASE
+========================================= */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Grid noise texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,212,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* =========================================
+   LAYOUT WRAPPER
+========================================= */
+.wrapper {
+  position: relative;
+  z-index: 1;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 32px 80px;
+}
+
+/* =========================================
+   HEADER
+========================================= */
+.site-header {
+  position: relative;
+  padding: 60px 0 48px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 56px;
+}
+
+.header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,212,255,0.08);
+  border: 1px solid rgba(0,212,255,0.25);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.header-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.8); }
+}
+
+h1 {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+h1 span { color: var(--accent); }
+
+.header-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 12px;
+  letter-spacing: 0.04em;
+}
+
+/* =========================================
+   NAV TOC
+========================================= */
+.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 24px 28px;
+  margin-bottom: 48px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px 32px;
+}
+
+.toc-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  grid-column: 1 / -1;
+  margin-bottom: 8px;
+}
+
+.toc a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toc a::before {
+  content: attr(data-num);
+  color: var(--border);
+  font-size: 10px;
+  min-width: 20px;
+}
+
+.toc a:hover { color: var(--accent); }
+
+/* =========================================
+   SECTION CARDS
+========================================= */
+.section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 36px 40px;
+  margin-bottom: 32px;
+  position: relative;
+  overflow: hidden;
+  animation: fadeUp 0.4s ease both;
+}
+
+.section::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  opacity: 0.5;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+h2 .sec-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: rgba(0,212,255,0.1);
+  border: 1px solid rgba(0,212,255,0.2);
+  color: var(--accent);
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.08em;
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 28px 0 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+p { color: #94a3b8; font-size: 15px; margin-bottom: 12px; }
+
+/* =========================================
+   CODE BLOCKS
+========================================= */
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #a8d8ea;
+  margin: 16px 0;
+  position: relative;
+}
+
+pre .kw  { color: var(--accent); }
+pre .str { color: var(--accent3); }
+pre .cmt { color: #374a65; font-style: italic; }
+pre .num { color: var(--warn); }
+pre .key { color: #c084fc; }
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* =========================================
+   TABLES
+========================================= */
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+thead th {
+  background: var(--surface2);
+  color: var(--accent);
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody td {
+  padding: 11px 16px;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(31,45,69,0.6);
+  vertical-align: top;
+}
+
+tbody tr:hover td { background: rgba(0,212,255,0.03); color: var(--text); }
+
+/* severity badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.badge-low      { background: rgba(16,185,129,0.12); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+.badge-medium   { background: rgba(245,158,11,0.12);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+.badge-high     { background: rgba(239,68,68,0.12);   color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+.badge-critical { background: rgba(124,58,237,0.15);  color: #a78bfa; border: 1px solid rgba(124,58,237,0.4); }
+
+/* =========================================
+   LIST
+========================================= */
+ul { padding-left: 0; list-style: none; }
+ul li {
+  padding: 6px 0 6px 20px;
+  color: #94a3b8;
+  font-size: 14px;
+  position: relative;
+}
+ul li::before {
+  content: '→';
+  position: absolute; left: 0;
+  color: var(--accent); font-family: 'JetBrains Mono', monospace;
+}
+
+/* =========================================
+   DFD / DIAGRAM CONTAINERS
+========================================= */
+.diagram-container {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  margin: 20px 0;
+  overflow-x: auto;
+}
+
+.diagram-container svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.diagram-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* =========================================
+   FLOW HIGHLIGHT CARDS (2-col grid)
+========================================= */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.info-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.info-card .ic-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.info-card .ic-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* =========================================
+   HORIZONTAL RULE
+========================================= */
+hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+/* =========================================
+   FOOTER
+========================================= */
+.site-footer {
+  text-align: center;
+  padding: 32px 0;
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+/* =========================================
+   SCROLL ANIMATIONS (intersection observer)
+========================================= */
+.section { opacity: 0; transform: translateY(20px); transition: opacity 0.5s ease, transform 0.5s ease; }
+.section.visible { opacity: 1; transform: none; }
+
+/* =========================================
+   RESPONSIVE
+========================================= */
+@media (max-width: 768px) {
+  .wrapper { padding: 0 16px 48px; }
+  .section { padding: 22px 20px; }
+  h2 { font-size: 18px; }
+  pre { font-size: 11px; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+<!-- ============================================================ HEADER -->
+<header class="site-header">
+  <div class="header-badge">v2.0 — Production Reference</div>
+  <h1>Fintech Activity Logging<br><span>&amp; SIEM Architecture</span></h1>
+  <p class="header-sub">// React · Laravel · MySQL · S3 · Kafka · FRM · SIEM · On-Prem</p>
+</header>
+
+<!-- ============================================================ TOC -->
+<nav class="toc" aria-label="Table of Contents">
+  <div class="toc-title">// Contents</div>
+  <a href="#s1"  data-num="01">Architecture Overview</a>
+  <a href="#s2"  data-num="02">Log Flow &amp; DFD</a>
+  <a href="#s3"  data-num="03">Context Diagram (DFD L0)</a>
+  <a href="#s4"  data-num="04">DFD Level 1 — Dataflow</a>
+  <a href="#s5"  data-num="05">DFD Level 2 — Backend Detail</a>
+  <a href="#s6"  data-num="06">IndexedDB Local Queue</a>
+  <a href="#s7"  data-num="07">Sync Mechanism</a>
+  <a href="#s8"  data-num="08">Backend Ingestion (Laravel)</a>
+  <a href="#s9"  data-num="09">MySQL Hot Storage</a>
+  <a href="#s10" data-num="10">S3 Cold Archive</a>
+  <a href="#s11" data-num="11">SIEM &amp; Fraud Detection</a>
+  <a href="#s12" data-num="12">FRM Rule Engine</a>
+  <a href="#s13" data-num="13">Log JSON Structure</a>
+  <a href="#s14" data-num="14">Compliance &amp; Security</a>
+  <a href="#s15" data-num="15">On-Prem Microservice Deployment</a>
+  <a href="#s16" data-num="16">Volume &amp; Cost Analysis</a>
+  <a href="#s17" data-num="17">Git Repository Structure</a>
+</nav>
+
+
+<!-- ============================================================ S1: ARCHITECTURE OVERVIEW -->
+<div class="section" id="s1">
+  <h2><span class="sec-num">01</span> Architecture Overview</h2>
+  <div class="info-grid">
+    <div class="info-card"><div class="ic-label">Client Layer</div><div class="ic-value">React App + IndexedDB</div></div>
+    <div class="info-card"><div class="ic-label">Sync Layer</div><div class="ic-value">Background Worker / Retry Queue</div></div>
+    <div class="info-card"><div class="ic-label">API Gateway</div><div class="ic-value">Laravel REST API</div></div>
+    <div class="info-card"><div class="ic-label">Message Broker</div><div class="ic-value">Kafka / RabbitMQ</div></div>
+    <div class="info-card"><div class="ic-label">Hot Storage</div><div class="ic-value">MySQL (Structured Logs)</div></div>
+    <div class="info-card"><div class="ic-label">Cold Archive</div><div class="ic-value">AWS S3 (Immutable JSON)</div></div>
+    <div class="info-card"><div class="ic-label">Threat Detection</div><div class="ic-value">FRM + SIEM Engine</div></div>
+    <div class="info-card"><div class="ic-label">Alerting</div><div class="ic-value">Email / SMS / Webhook</div></div>
+  </div>
+  <h3>Layered Architecture</h3>
+  <pre>
+┌──────────────────────────────────────────────┐
+│              CLIENT LAYER                    │
+│  React UI  ←→  IndexedDB (Offline Queue)     │
+└──────────────────────┬───────────────────────┘
+                       ↓
+┌──────────────────────────────────────────────┐
+│        APPLICATION SERVICE LAYER             │
+│  MMS · OPS · WegoX · IssureX · S3 · SMTP    │
+└──────────────────────┬───────────────────────┘
+                       ↓
+┌──────────────────────────────────────────────┐
+│         LOG INGESTION GATEWAY                │
+│  Laravel API  ·  Schema Validation           │
+│  Rate Limiting  ·  Integrity Hashing         │
+└──────────────────────┬───────────────────────┘
+                       ↓
+┌──────────────────────────────────────────────┐
+│           MESSAGE BROKER LAYER               │
+│  Kafka / RabbitMQ  (Durable Event Stream)    │
+└───────────────┬───────────────┬──────────────┘
+                ↓               ↓
+        Log Processor    FRM Risk Consumer
+                ↓               ↓
+          MySQL (Hot)      SIEM / Alert
+          S3 (Cold)        Case Management
+</pre>
+</div>
+
+
+<!-- ============================================================ S2: LOG FLOW -->
+<div class="section" id="s2">
+  <h2><span class="sec-num">02</span> End-to-End Log Flow</h2>
+  <pre>
+User Action  →  React Event Listener  →  Log Builder
+           →  IndexedDB (Local Queue)
+           →  Sync Worker  (Batch ≤ 100 logs)
+           →  POST /api/v1/activity/logs/batch  (Laravel)
+           →
+               ├──  Queue (Redis / DB Queue)
+               │        ↓
+               │   Log Processor Worker
+               │        ↓
+               ├──  MySQL  (Hot: 30–90 days)
+               └──  S3     (Cold: 7 years)
+
+                    ↓ (parallel)
+               FRM Microservice
+                    ↓
+               SIEM Engine
+                    ├── Alert (Email / SMS)
+                    └── Case Management
+</pre>
+
+  <h3>Complete Flow With SIEM &amp; Fraud Engine</h3>
+  <pre>
+┌────────────────────────────┐
+│        USER ACTION         │
+└──────────────┬─────────────┘
+               ↓
+┌────────────────────────────┐
+│   React Logging Layer      │
+│   (IndexedDB Queue)        │
+└──────────────┬─────────────┘
+               ↓ POST /batch
+┌────────────────────────────┐
+│   Laravel Ingestion API    │
+│   Schema · Hash · Rate     │
+└──────────────┬─────────────┘
+               ↓
+┌────────────────────────────┐
+│   Kafka / RabbitMQ Broker  │
+└────────┬──────────┬────────┘
+         ↓          ↓
+  Log Processor   FRM Consumer
+         ↓          ↓
+    ┌────────┐  ┌──────────────────────────┐
+    │ MySQL  │  │  Risk Scoring Engine     │
+    │ (Hot)  │  │  Rule Evaluation Engine  │
+    └────────┘  │  Alert Dispatcher        │
+    ┌────────┐  │  Case Management         │
+    │  S3    │  └──────────┬───────────────┘
+    │ (Cold) │             ↓
+    └────────┘   Email · SMS · Webhook · Dashboard
+</pre>
+</div>
+
+
+<!-- ============================================================ S3: DFD LEVEL 0 -->
+<div class="section" id="s3">
+  <h2><span class="sec-num">03</span> Context Diagram — DFD Level 0</h2>
+  <p>The Context Diagram shows the system as a single process with all external entities and primary data flows.</p>
+
+  <div class="diagram-container">
+    <svg viewBox="0 0 900 460" width="900" height="460" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#00d4ff"/>
+        </marker>
+        <marker id="ah2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#10b981"/>
+        </marker>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- Background -->
+      <rect width="900" height="460" fill="#060d18" rx="8"/>
+
+      <!-- Central System Process -->
+      <circle cx="450" cy="230" r="90" fill="none" stroke="#00d4ff" stroke-width="2" filter="url(#glow)"/>
+      <circle cx="450" cy="230" r="86" fill="rgba(0,212,255,0.06)"/>
+      <text x="450" y="222" text-anchor="middle" fill="#fff" font-family="Syne,sans-serif" font-size="14" font-weight="700">FINTECH ACTIVITY</text>
+      <text x="450" y="240" text-anchor="middle" fill="#fff" font-family="Syne,sans-serif" font-size="14" font-weight="700">LOGGING SYSTEM</text>
+      <text x="450" y="258" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">Process 0</text>
+
+      <!-- External Entity: User/React App -->
+      <rect x="40" y="180" width="130" height="60" rx="6" fill="rgba(124,58,237,0.15)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="105" y="207" text-anchor="middle" fill="#c4b5fd" font-family="Syne,sans-serif" font-size="13" font-weight="600">User /</text>
+      <text x="105" y="223" text-anchor="middle" fill="#c4b5fd" font-family="Syne,sans-serif" font-size="13" font-weight="600">React App</text>
+
+      <!-- External Entity: SIEM -->
+      <rect x="730" y="80" width="130" height="60" rx="6" fill="rgba(239,68,68,0.12)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="795" y="107" text-anchor="middle" fill="#fca5a5" font-family="Syne,sans-serif" font-size="13" font-weight="600">SIEM /</text>
+      <text x="795" y="123" text-anchor="middle" fill="#fca5a5" font-family="Syne,sans-serif" font-size="13" font-weight="600">Alert Engine</text>
+
+      <!-- External Entity: DBA / Analyst -->
+      <rect x="730" y="300" width="130" height="60" rx="6" fill="rgba(16,185,129,0.12)" stroke="#10b981" stroke-width="1.5"/>
+      <text x="795" y="327" text-anchor="middle" fill="#6ee7b7" font-family="Syne,sans-serif" font-size="13" font-weight="600">DBA /</text>
+      <text x="795" y="343" text-anchor="middle" fill="#6ee7b7" font-family="Syne,sans-serif" font-size="13" font-weight="600">Analyst</text>
+
+      <!-- External Entity: MySQL -->
+      <rect x="350" y="360" width="200" height="60" rx="6" fill="rgba(245,158,11,0.12)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="450" y="387" text-anchor="middle" fill="#fcd34d" font-family="Syne,sans-serif" font-size="13" font-weight="600">MySQL · S3</text>
+      <text x="450" y="403" text-anchor="middle" fill="#fcd34d" font-family="Syne,sans-serif" font-size="13" font-weight="600">Storage Backends</text>
+
+      <!-- External Entity: Admin -->
+      <rect x="350" y="30" width="200" height="60" rx="6" fill="rgba(0,212,255,0.1)" stroke="#00d4ff" stroke-width="1.5"/>
+      <text x="450" y="57" text-anchor="middle" fill="#67e8f9" font-family="Syne,sans-serif" font-size="13" font-weight="600">Admin /</text>
+      <text x="450" y="73" text-anchor="middle" fill="#67e8f9" font-family="Syne,sans-serif" font-size="13" font-weight="600">Compliance Officer</text>
+
+      <!-- Arrows: User → System -->
+      <line x1="170" y1="210" x2="360" y2="216" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#ah)"/>
+      <text x="245" y="204" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">Activity Logs</text>
+
+      <!-- Arrows: System → SIEM -->
+      <line x1="530" y1="168" x2="730" y2="125" stroke="#ef4444" stroke-width="1.5" marker-end="url(#ah)"/>
+      <text x="638" y="142" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono,monospace" font-size="10">Risk Alerts</text>
+
+      <!-- Arrows: Analyst → System (queries) -->
+      <line x1="730" y1="330" x2="540" y2="275" stroke="#10b981" stroke-width="1.5" marker-end="url(#ah2)"/>
+      <text x="660" y="316" text-anchor="middle" fill="#10b981" font-family="JetBrains Mono,monospace" font-size="10">Query / Report</text>
+
+      <!-- Arrows: System → Storage -->
+      <line x1="450" y1="320" x2="450" y2="360" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#ah)"/>
+      <text x="480" y="350" text-anchor="middle" fill="#f59e0b" font-family="JetBrains Mono,monospace" font-size="10">Persist</text>
+
+      <!-- Arrows: Admin → System -->
+      <line x1="450" y1="90" x2="450" y2="140" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#ah)"/>
+      <text x="490" y="122" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">Rules / Config</text>
+    </svg>
+    <p class="diagram-label">DFD Level 0 — System Context Diagram</p>
+  </div>
+</div>
+
+
+<!-- ============================================================ S4: DFD LEVEL 1 -->
+<div class="section" id="s4">
+  <h2><span class="sec-num">04</span> DFD Level 1 — Primary Dataflow</h2>
+  <p>Decomposed view showing the major internal processes: capture, queue, ingestion, processing, and storage.</p>
+
+  <div class="diagram-container">
+    <svg viewBox="0 0 960 680" width="960" height="680" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#00d4ff"/></marker>
+        <marker id="a2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#10b981"/></marker>
+        <marker id="a3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f59e0b"/></marker>
+        <marker id="a4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
+        <filter id="g2"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      </defs>
+      <rect width="960" height="680" fill="#060d18" rx="8"/>
+
+      <!-- PROCESS NODES (rounded rects) -->
+      <!-- P1: Log Capture -->
+      <rect x="60" y="100" width="160" height="64" rx="30" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.8" filter="url(#g2)"/>
+      <text x="140" y="128" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P1: Log Capture</text>
+      <text x="140" y="148" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">React Listener</text>
+
+      <!-- P2: IndexedDB Queue -->
+      <rect x="60" y="240" width="160" height="64" rx="30" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.8" filter="url(#g2)"/>
+      <text x="140" y="268" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P2: Local Queue</text>
+      <text x="140" y="288" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">IndexedDB</text>
+
+      <!-- P3: Sync Worker -->
+      <rect x="60" y="380" width="160" height="64" rx="30" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" stroke-width="1.8"/>
+      <text x="140" y="408" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P3: Sync Worker</text>
+      <text x="140" y="428" text-anchor="middle" fill="#a78bfa" font-family="JetBrains Mono,monospace" font-size="10">Batch + Hash</text>
+
+      <!-- P4: Laravel Ingestion -->
+      <rect x="380" y="240" width="200" height="64" rx="30" fill="rgba(245,158,11,0.10)" stroke="#f59e0b" stroke-width="1.8"/>
+      <text x="480" y="268" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4: Laravel API</text>
+      <text x="480" y="288" text-anchor="middle" fill="#fcd34d" font-family="JetBrains Mono,monospace" font-size="10">Validate · Rate Limit</text>
+
+      <!-- P5: Message Broker -->
+      <rect x="380" y="380" width="200" height="64" rx="30" fill="rgba(16,185,129,0.10)" stroke="#10b981" stroke-width="1.8"/>
+      <text x="480" y="408" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P5: Kafka / MQ</text>
+      <text x="480" y="428" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono,monospace" font-size="10">Durable Stream</text>
+
+      <!-- P6: Log Processor Worker -->
+      <rect x="700" y="240" width="190" height="64" rx="30" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.8"/>
+      <text x="795" y="268" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P6: Log Processor</text>
+      <text x="795" y="288" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="10">Worker</text>
+
+      <!-- P7: FRM Risk Engine -->
+      <rect x="700" y="380" width="190" height="64" rx="30" fill="rgba(239,68,68,0.10)" stroke="#ef4444" stroke-width="1.8"/>
+      <text x="795" y="408" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7: FRM Engine</text>
+      <text x="795" y="428" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="10">Risk Score · Rules</text>
+
+      <!-- DATA STORES (open-ended rectangles) -->
+      <!-- DS1: MySQL -->
+      <line x1="700" y1="558" x2="900" y2="558" stroke="#f59e0b" stroke-width="1.5"/>
+      <line x1="700" y1="580" x2="900" y2="580" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="800" y="573" text-anchor="middle" fill="#fcd34d" font-family="JetBrains Mono,monospace" font-size="12" font-weight="600">DS1: MySQL (Hot)</text>
+
+      <!-- DS2: S3 -->
+      <line x1="540" y1="558" x2="680" y2="558" stroke="#10b981" stroke-width="1.5"/>
+      <line x1="540" y1="580" x2="680" y2="580" stroke="#10b981" stroke-width="1.5"/>
+      <text x="610" y="573" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono,monospace" font-size="12" font-weight="600">DS2: S3 (Cold)</text>
+
+      <!-- DS3: SIEM Case -->
+      <line x1="700" y1="618" x2="900" y2="618" stroke="#ef4444" stroke-width="1.5"/>
+      <line x1="700" y1="640" x2="900" y2="640" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="800" y="633" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="12" font-weight="600">DS3: SIEM / Cases</text>
+
+      <!-- EXTERNAL ENTITIES -->
+      <rect x="60" y="40" width="160" height="44" rx="6" fill="rgba(124,58,237,0.15)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="140" y="67" text-anchor="middle" fill="#c4b5fd" font-family="Syne,sans-serif" font-size="13" font-weight="700">User / Browser</text>
+
+      <!-- ARROWS -->
+      <!-- User → P1 -->
+      <line x1="140" y1="84" x2="140" y2="100" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="155" y="96" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">event</text>
+
+      <!-- P1 → P2 -->
+      <line x1="140" y1="164" x2="140" y2="240" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="155" y="208" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">log object</text>
+
+      <!-- P2 → P3 -->
+      <line x1="140" y1="304" x2="140" y2="380" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="155" y="348" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">batch[]</text>
+
+      <!-- P3 → P4 -->
+      <line x1="220" y1="412" x2="380" y2="300" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#a1)"/>
+      <text x="295" y="370" fill="#a78bfa" font-family="JetBrains Mono,monospace" font-size="9">HTTPS POST</text>
+
+      <!-- P4 → P5 -->
+      <line x1="480" y1="304" x2="480" y2="380" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#a3)"/>
+      <text x="495" y="348" fill="#f59e0b" font-family="JetBrains Mono,monospace" font-size="9">enqueue</text>
+
+      <!-- P5 → P6 -->
+      <line x1="580" y1="400" x2="700" y2="280" stroke="#10b981" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="640" y="353" fill="#10b981" font-family="JetBrains Mono,monospace" font-size="9">consume</text>
+
+      <!-- P5 → P7 -->
+      <line x1="580" y1="420" x2="700" y2="420" stroke="#ef4444" stroke-width="1.5" marker-end="url(#a4)"/>
+      <text x="635" y="414" fill="#ef4444" font-family="JetBrains Mono,monospace" font-size="9">risk feed</text>
+
+      <!-- P6 → DS1 -->
+      <line x1="795" y1="304" x2="795" y2="558" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#a3)"/>
+      <text x="810" y="440" fill="#f59e0b" font-family="JetBrains Mono,monospace" font-size="9">persist</text>
+
+      <!-- P6 → DS2 -->
+      <line x1="730" y1="300" x2="620" y2="558" stroke="#10b981" stroke-width="1.5" marker-end="url(#a2)"/>
+      <text x="650" y="440" fill="#10b981" font-family="JetBrains Mono,monospace" font-size="9">archive</text>
+
+      <!-- P7 → DS3 -->
+      <line x1="795" y1="444" x2="795" y2="618" stroke="#ef4444" stroke-width="1.5" marker-end="url(#a4)"/>
+      <text x="810" y="540" fill="#ef4444" font-family="JetBrains Mono,monospace" font-size="9">alert/case</text>
+    </svg>
+    <p class="diagram-label">DFD Level 1 — Primary Dataflow Decomposition</p>
+  </div>
+</div>
+
+
+<!-- ============================================================ S5: DFD LEVEL 2 -->
+<div class="section" id="s5">
+  <h2><span class="sec-num">05</span> DFD Level 2 — Backend Ingestion Detail</h2>
+  <p>Detailed decomposition of the Laravel API ingestion pipeline and the FRM processing chain.</p>
+
+  <div class="diagram-container">
+    <svg viewBox="0 0 960 520" width="960" height="520" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="b1" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#00d4ff"/></marker>
+        <marker id="b2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#ef4444"/></marker>
+        <marker id="b3" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#10b981"/></marker>
+        <marker id="b4" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#f59e0b"/></marker>
+      </defs>
+      <rect width="960" height="520" fill="#060d18" rx="8"/>
+
+      <!-- Labels header -->
+      <text x="240" y="30" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="11" letter-spacing="0.1em">LARAVEL INGESTION PIPELINE</text>
+      <text x="720" y="30" text-anchor="middle" fill="#ef4444" font-family="JetBrains Mono,monospace" font-size="11" letter-spacing="0.1em">FRM PROCESSING CHAIN</text>
+      <line x1="480" y1="15" x2="480" y2="500" stroke="#1f2d45" stroke-width="1" stroke-dasharray="6,4"/>
+
+      <!-- Left pipeline boxes -->
+      <!-- Step boxes: same width 200, heights 48, spaced every 70px starting y=60 -->
+      <!-- P4.1 Schema Validate -->
+      <rect x="140" y="60" width="200" height="48" rx="24" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.5"/>
+      <text x="240" y="83" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4.1: Schema Validate</text>
+      <text x="240" y="99" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">JSON Schema Rules</text>
+
+      <!-- P4.2 Integrity Hash -->
+      <rect x="140" y="140" width="200" height="48" rx="24" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.5"/>
+      <text x="240" y="163" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4.2: Verify Hash</text>
+      <text x="240" y="179" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">SHA256 Check</text>
+
+      <!-- P4.3 Rate Limiting -->
+      <rect x="140" y="220" width="200" height="48" rx="24" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.5"/>
+      <text x="240" y="243" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4.3: Rate Limiting</text>
+      <text x="240" y="259" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">Throttle + Block</text>
+
+      <!-- P4.4 Timestamp + Trace -->
+      <rect x="140" y="300" width="200" height="48" rx="24" fill="rgba(0,212,255,0.08)" stroke="#00d4ff" stroke-width="1.5"/>
+      <text x="240" y="323" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4.4: Timestamp</text>
+      <text x="240" y="339" text-anchor="middle" fill="#00d4ff" font-family="JetBrains Mono,monospace" font-size="9">server_received_at</text>
+
+      <!-- P4.5 Enqueue -->
+      <rect x="140" y="380" width="200" height="48" rx="24" fill="rgba(124,58,237,0.15)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="240" y="403" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P4.5: Enqueue</text>
+      <text x="240" y="419" text-anchor="middle" fill="#a78bfa" font-family="JetBrains Mono,monospace" font-size="9">Kafka / Redis Queue</text>
+
+      <!-- Return 200 OK -->
+      <rect x="140" y="450" width="200" height="40" rx="8" fill="rgba(16,185,129,0.10)" stroke="#10b981" stroke-width="1.2"/>
+      <text x="240" y="475" text-anchor="middle" fill="#6ee7b7" font-family="JetBrains Mono,monospace" font-size="11">→ 200 OK (non-blocking)</text>
+
+      <!-- Left Arrows -->
+      <line x1="240" y1="108" x2="240" y2="140" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#b1)"/>
+      <line x1="240" y1="188" x2="240" y2="220" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#b1)"/>
+      <line x1="240" y1="268" x2="240" y2="300" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#b1)"/>
+      <line x1="240" y1="348" x2="240" y2="380" stroke="#00d4ff" stroke-width="1.5" marker-end="url(#b1)"/>
+
+      <!-- Right pipeline boxes (FRM chain) -->
+      <!-- P7.1 Consume Event -->
+      <rect x="620" y="60" width="200" height="48" rx="24" fill="rgba(239,68,68,0.10)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="720" y="83" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7.1: Consume Event</text>
+      <text x="720" y="99" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="9">From Kafka / MQ</text>
+
+      <!-- P7.2 Rule Evaluation -->
+      <rect x="620" y="140" width="200" height="48" rx="24" fill="rgba(239,68,68,0.10)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="720" y="163" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7.2: Evaluate Rules</text>
+      <text x="720" y="179" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="9">Active Rule Set</text>
+
+      <!-- P7.3 Risk Score -->
+      <rect x="620" y="220" width="200" height="48" rx="24" fill="rgba(239,68,68,0.10)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="720" y="243" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7.3: Risk Score</text>
+      <text x="720" y="259" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="9">LOW / MED / HIGH / CRIT</text>
+
+      <!-- P7.4 Threshold Check -->
+      <rect x="620" y="300" width="200" height="48" rx="24" fill="rgba(239,68,68,0.10)" stroke="#ef4444" stroke-width="1.5"/>
+      <text x="720" y="323" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7.4: Threshold Check</text>
+      <text x="720" y="339" text-anchor="middle" fill="#fca5a5" font-family="JetBrains Mono,monospace" font-size="9">score ≥ threshold?</text>
+
+      <!-- P7.5 Alert / Case -->
+      <rect x="620" y="380" width="200" height="48" rx="24" fill="rgba(124,58,237,0.15)" stroke="#7c3aed" stroke-width="1.5"/>
+      <text x="720" y="403" text-anchor="middle" fill="#e2e8f0" font-family="Syne,sans-serif" font-size="12" font-weight="700">P7.5: Alert + Case</text>
+      <text x="720" y="419" text-anchor="middle" fill="#a78bfa" font-family="JetBrains Mono,monospace" font-size="9">Email · SMS · Webhook</text>
+
+      <!-- Right Arrows -->
+      <line x1="720" y1="108" x2="720" y2="140" stroke="#ef4444" stroke-width="1.5" marker-end="url(#b2)"/>
+      <line x1="720" y1="188" x2="720" y2="220" stroke="#ef4444" stroke-width="1.5" marker-end="url(#b2)"/>
+      <line x1="720" y1="268" x2="720" y2="300" stroke="#ef4444" stroke-width="1.5" marker-end="url(#b2)"/>
+      <line x1="720" y1="348" x2="720" y2="380" stroke="#ef4444" stroke-width="1.5" marker-end="url(#b2)"/>
+
+      <!-- Cross arrow: P4.5 Enqueue → P7.1 -->
+      <line x1="340" y1="404" x2="620" y2="84" stroke="#7c3aed" stroke-width="1.3" stroke-dasharray="5,3" marker-end="url(#b1)"/>
+      <text x="490" y="280" text-anchor="middle" fill="#a78bfa" font-family="JetBrains Mono,monospace" font-size="9" transform="rotate(-35 490 280)">async fan-out</text>
+    </svg>
+    <p class="diagram-label">DFD Level 2 — Ingestion &amp; FRM Processing Chain</p>
+  </div>
+</div>
+
+
+<!-- ============================================================ S6: IndexedDB -->
+<div class="section" id="s6">
+  <h2><span class="sec-num">06</span> IndexedDB Local Queue Architecture</h2>
+  <pre>
+<span class="cmt">// Database: fintech_activity_logs</span>
+<span class="kw">Object Store:</span> logs
+<span class="kw">Key Path:</span>    audit_id
+
+<span class="kw">Indexes:</span>
+  timestamp           (Indexed)
+  event_type          (Indexed)
+  user.id             (Indexed)
+  severity            (Indexed)
+  channel             (Indexed)
+  synced              (Indexed)
+  retry_count         (Indexed)
+
+<span class="kw">Stored Object:</span>
+  audit_id            <span class="cmt">// Primary UUID</span>
+  timestamp           <span class="cmt">// ISO 8601</span>
+  event_type
+  action
+  severity
+  user.id
+  channel
+  trace.trace_id
+  risk_analysis.risk_score
+  risk_analysis.anomaly_detected
+  payload             <span class="cmt">// Full JSON log</span>
+  synced              <span class="cmt">// Boolean, default: false</span>
+  retry_count         <span class="cmt">// Number, default: 0</span>
+  last_sync_attempt_at
+  batch_id            <span class="cmt">// Assigned during sync</span>
+
+<span class="kw">Retention Rules:</span>
+  Auto-delete synced logs  → after 7 days
+  Hard delete all logs     → after 30 days
+  Storage safety cap       → 50 MB
+</pre>
+</div>
+
+
+<!-- ============================================================ S7: SYNC MECHANISM -->
+<div class="section" id="s7">
+  <h2><span class="sec-num">07</span> Sync Mechanism — React Background Worker</h2>
+  <pre>
+<span class="kw">Sync Trigger Conditions:</span>
+  • Every 30 seconds
+  • OR unsynced logs ≥ 100
+  • OR user comes online
+  • OR before tab close
+  • OR on visibility change
+
+<span class="kw">Batch Processing:</span>
+
+  1. Fetch logs WHERE synced = false ORDER BY timestamp ASC LIMIT 100
+  2. Create batch payload:
+       {
+         <span class="key">batch_id</span>:   UUID,
+         <span class="key">total_logs</span>: count,
+         <span class="key">logs</span>:       [ ...Full JSON logs ]
+       }
+
+  3. Generate SHA256 integrity hash:
+       audit_id + timestamp + user.id + trace.trace_id
+
+  4. POST /api/v1/activity/logs/batch
+       Headers: Authorization · X-Batch-ID · X-Integrity-Hash
+
+<span class="kw">On Success (200 OK):</span>
+  • Mark synced = true
+  • Store server acknowledgement timestamp
+  • Store server trace_id
+
+<span class="kw">On Failure — Exponential Backoff:</span>
+  retry 1  →  30 sec
+  retry 2  →   2 min
+  retry 3  →   5 min
+  retry 4  →  10 min
+  retry 5  →  Stop &amp; flag
+
+<span class="kw">Security Controls:</span>
+  • HTTPS only
+  • Mask device.ip_address (optional)
+  • No raw PII in storage
+  • Validate log_integrity_hash before send
+</pre>
+</div>
+
+
+<!-- ============================================================ S8: BACKEND INGESTION -->
+<div class="section" id="s8">
+  <h2><span class="sec-num">08</span> Backend Ingestion Architecture — Laravel</h2>
+  <pre>
+<span class="kw">Endpoint:</span>  POST /api/v1/activity/logs/batch
+
+<span class="kw">Pipeline:</span>
+  1. Validate JSON schema
+  2. Verify integrity hash (SHA256)
+  3. Rate limit check (per client / IP)
+  4. Add server_timestamp
+  5. Attach server trace_id
+  6. Push logs → Queue (Redis / Database Queue)
+  7. Return <span class="str">200 OK</span> immediately (non-blocking)
+
+<span class="kw">Queue Worker (async):</span>
+  • Consume batch from queue
+  • Persist structured columns → MySQL (hot)
+  • Serialize full JSON → S3 (cold archive)
+  • Fan-out risk feed → Kafka → FRM Consumer
+</pre>
+</div>
+
+
+<!-- ============================================================ S9: MYSQL -->
+<div class="section" id="s9">
+  <h2><span class="sec-num">09</span> MySQL Hot Storage — <code>activity_logs</code></h2>
+  <pre>
+<span class="kw">Core Columns (Indexed):</span>
+  id              (AUTO_INCREMENT PK)
+  audit_id        (UNIQUE INDEX)
+  timestamp       (INDEX)
+  event_type      (INDEX)
+  action          (INDEX)
+  severity        (INDEX)
+  channel         (INDEX)
+
+<span class="kw">User &amp; Risk:</span>
+  user_id         (INDEX)    ← user.id
+  user_role
+  risk_score      (INDEX)    ← risk_analysis.risk_score
+  anomaly_detected (BOOL INDEX)
+
+<span class="kw">Tracing:</span>
+  trace_id        (INDEX)
+  span_id
+  parent_span_id
+
+<span class="kw">Device:</span>
+  ip_address      (INDEX)
+  user_agent
+  screen_resolution
+  timezone
+
+<span class="kw">Business Context:</span>
+  loan_id         (INDEX)
+  product_type
+  amount
+  currency
+
+<span class="kw">Performance:</span>
+  api_duration_ms
+  total_transaction_time_ms
+
+<span class="kw">Full Log:</span>
+  payload         (JSON column — complete original log)
+
+<span class="kw">Partition Strategy:</span>
+  PARTITION BY RANGE (YEAR_MONTH)
+  Hot retention:  30–90 days
+  Archive:        S3 after 90 days
+
+<span class="kw">Common Fraud Queries:</span>
+
+  <span class="cmt">-- Rapid Click Detection</span>
+  WHERE event_type = <span class="str">'UI_ACTIVITY'</span>
+  AND   payload-&gt;<span class="str">'$.behavior.rapid_click_flag'</span> = true
+
+  <span class="cmt">-- High Risk Users</span>
+  WHERE risk_score &gt; <span class="num">70</span>
+  ORDER BY risk_score DESC
+
+  <span class="cmt">-- Geo/IP Anomaly</span>
+  GROUP BY user_id HAVING COUNT(DISTINCT ip_address) &gt; <span class="num">3</span>
+</pre>
+</div>
+
+
+<!-- ============================================================ S10: S3 -->
+<div class="section" id="s10">
+  <h2><span class="sec-num">10</span> S3 Cold Archive Storage</h2>
+  <pre>
+<span class="kw">Bucket Structure (Per Application):</span>
+
+  s3://mms-activity-logs/
+  s3://frm-activity-logs/
+  s3://wegoX-activity-logs/
+  s3://issureX-activity-logs/
+
+<span class="kw">Directory Structure:</span>
+  s3://wegoX-activity-logs/
+     └── <span class="num">2026</span>/           <span class="cmt">// Year</span>
+         └── <span class="num">01</span>/          <span class="cmt">// Month</span>
+             └── <span class="num">04</span>/       <span class="cmt">// Day</span>
+                 └── user_42/
+                     ├── 10_11.json.gz
+                     ├── 11_12.json.gz
+                     └── 12_13.json.gz
+
+<span class="kw">File Contents:</span>
+  • Batched JSON activity logs
+  • Sorted by timestamp
+  • Compressed using gzip
+  • Immutable once written (Object Lock)
+
+<span class="kw">Lifecycle Policy:</span>
+  Day 0–90   → S3 Standard
+  Day 90+    → S3 Glacier Instant Retrieval
+  Day 2555+  → Delete (7 year compliance)
+</pre>
+
+  <h3>Storage Strategy Summary</h3>
+  <div class="info-grid">
+    <div class="info-card"><div class="ic-label">IndexedDB</div><div class="ic-value">Temp offline-safe client queue</div></div>
+    <div class="info-card"><div class="ic-label">MySQL</div><div class="ic-value">Searchable operational store (30–90d)</div></div>
+    <div class="info-card"><div class="ic-label">S3</div><div class="ic-value">Immutable low-cost compliance archive</div></div>
+  </div>
+</div>
+
+
+<!-- ============================================================ S11: SIEM -->
+<div class="section" id="s11">
+  <h2><span class="sec-num">11</span> SIEM &amp; Fraud Detection Layer</h2>
+  <pre>
+<span class="kw">Fraud Rule Examples:</span>
+
+  1. Rapid Click
+     click_speed_ms &lt; <span class="num">100</span>
+     → risk_score <span class="num">+10</span>
+
+  2. Multiple IP Change
+     3+ distinct IPs in 10 mins
+     → risk_score <span class="num">+25</span>
+
+  3. API Failures
+     status_code ≥ <span class="num">400</span>  repeated 5× in session
+     → anomaly_detected = true
+
+  4. Bot Behavior
+     mouse_movement_pattern = <span class="str">'BOT_LIKE'</span>
+     → risk_score <span class="num">+30</span>
+
+<span class="kw">Escalation:</span>
+  IF risk_score &gt; <span class="num">70</span>:
+    → anomaly_detected  = true
+    → Create Fraud Case
+    → Dispatch Alert
+</pre>
+
+  <h3>SIEM Alert Escalation Model</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Severity</th><th>Risk Score</th><th>Action</th><th>Channels</th></tr></thead>
+      <tbody>
+        <tr><td><span class="badge badge-low">LOW</span></td><td>&lt; 30</td><td>Log only</td><td>—</td></tr>
+        <tr><td><span class="badge badge-medium">MEDIUM</span></td><td>30–59</td><td>Dashboard monitoring</td><td>Admin Dashboard</td></tr>
+        <tr><td><span class="badge badge-high">HIGH</span></td><td>60–79</td><td>Alert security team</td><td>Email</td></tr>
+        <tr><td><span class="badge badge-critical">CRITICAL</span></td><td>≥ 80</td><td>Create Incident + Notify</td><td>Email + SMS + Webhook</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>SIEM Integration Options</h3>
+  <pre>
+  Option 1:  Risk Engine → Push Alerts → Enterprise SIEM (Syslog / Webhook)
+  Option 2:  Elasticsearch Cluster acts as internal SIEM index
+  Option 3:  Wazuh / ELK consumes logs directly from Message Broker
+</pre>
+</div>
+
+
+<!-- ============================================================ S12: FRM RULES -->
+<div class="section" id="s12">
+  <h2><span class="sec-num">12</span> FRM Severity Rule Engine Configuration</h2>
+  <p>All rules are centrally configurable and can be enabled/disabled without redeployment.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rule ID</th><th>Event Type</th><th>Condition</th>
+          <th>Impact</th><th>Likelihood</th><th>Risk Δ</th>
+          <th>Severity</th><th>Alert Channel</th><th>Auto Case</th><th>Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>R001</td><td>UI_ACTIVITY</td><td>rapid_click_flag = true</td>
+          <td>LOW</td><td>MEDIUM</td><td>+10</td>
+          <td><span class="badge badge-low">LOW</span></td><td>NONE</td><td>No</td><td>✓</td>
+        </tr>
+        <tr>
+          <td>R002</td><td>API_FAILURE</td><td>status_code ≥ 400 AND count ≥ 5</td>
+          <td>MEDIUM</td><td>MEDIUM</td><td>+20</td>
+          <td><span class="badge badge-medium">MEDIUM</span></td><td>DASHBOARD</td><td>No</td><td>✓</td>
+        </tr>
+        <tr>
+          <td>R003</td><td>MULTI_IP</td><td>distinct_ip ≥ 3 within 10 min</td>
+          <td>HIGH</td><td>HIGH</td><td>+30</td>
+          <td><span class="badge badge-high">HIGH</span></td><td>EMAIL</td><td>Yes</td><td>✓</td>
+        </tr>
+        <tr>
+          <td>R004</td><td>BOT_PATTERN</td><td>mouse_pattern = BOT</td>
+          <td>HIGH</td><td>HIGH</td><td>+40</td>
+          <td><span class="badge badge-critical">CRITICAL</span></td><td>EMAIL + SMS</td><td>Yes</td><td>✓</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Rule Execution Logic</h3>
+  <pre>
+For each incoming log:
+
+  1. Evaluate all ACTIVE rules
+  2. If condition_expression = TRUE:
+       → Accumulate risk_score_increment
+       → Apply immediate severity (if threshold breach)
+       → Trigger alert_channel if action_required = true
+       → Create case if auto_case = true
+
+  3. After all rules evaluated:
+       Determine FINAL severity from thresholds:
+
+       total_risk_score &lt; <span class="num">30</span>   →  LOW
+       total_risk_score <span class="num">30–59</span>  →  MEDIUM
+       total_risk_score <span class="num">60–79</span>  →  HIGH
+       total_risk_score ≥ <span class="num">80</span>   →  CRITICAL
+</pre>
+</div>
+
+
+<!-- ============================================================ S13: LOG JSON -->
+<div class="section" id="s13">
+  <h2><span class="sec-num">13</span> Log JSON Structure</h2>
+  <pre>
+{
+  <span class="key">"timestamp"</span>:  <span class="str">"2026-01-04T14:35:10.567Z"</span>,
+  <span class="key">"audit_id"</span>:   <span class="str">"AUD-2026-00010045"</span>,
+  <span class="key">"event_type"</span>: <span class="str">"UI_ACTIVITY"</span>,
+  <span class="key">"action"</span>:     <span class="str">"MERCHANT_CREATE_SUBMIT"</span>,
+  <span class="key">"severity"</span>:   <span class="str">"HIGH"</span>,
+
+  <span class="key">"application"</span>: { <span class="key">"name"</span>: <span class="str">"admin-portal"</span>, <span class="key">"version"</span>: <span class="str">"1.3.0"</span>, <span class="key">"environment"</span>: <span class="str">"production"</span> },
+
+  <span class="key">"session"</span>: {
+    <span class="key">"session_id"</span>: <span class="str">"sess-admin-7788xyz"</span>,
+    <span class="key">"tab_id"</span>:     <span class="str">"tab-1"</span>,
+    <span class="key">"device_id"</span>:  <span class="str">"dev-admin-001"</span>,
+    <span class="key">"login_time"</span>: <span class="str">"2026-01-04T14:10:00.100Z"</span>
+  },
+
+  <span class="key">"user"</span>: { <span class="key">"id"</span>: <span class="num">1</span>, <span class="key">"role"</span>: <span class="str">"admin"</span>, <span class="key">"risk_profile"</span>: <span class="str">"LOW"</span> },
+
+  <span class="key">"channel"</span>: <span class="str">"WEB"</span>,
+
+  <span class="key">"trace"</span>: {
+    <span class="key">"trace_id"</span>:       <span class="str">"trace-merchant-create-001"</span>,
+    <span class="key">"span_id"</span>:        <span class="str">"span-ui-modal-001"</span>,
+    <span class="key">"parent_span_id"</span>: <span class="str">"span-dashboard-000"</span>
+  },
+
+  <span class="key">"ui_activity"</span>: {
+    <span class="key">"page"</span>:              <span class="str">"/merchant-list"</span>,
+    <span class="key">"component"</span>:         <span class="str">"AddMerchantModal"</span>,
+    <span class="key">"element"</span>:           <span class="str">"SubmitButton"</span>,
+    <span class="key">"action"</span>:            <span class="str">"CLICK"</span>,
+    <span class="key">"coordinates"</span>:       { <span class="key">"x"</span>: <span class="num">960</span>, <span class="key">"y"</span>: <span class="num">820</span> },
+    <span class="key">"duration_on_page_ms"</span>: <span class="num">43000</span>
+  },
+
+  <span class="key">"behavior"</span>: {
+    <span class="key">"click_speed_ms"</span>:         <span class="num">210</span>,
+    <span class="key">"keystroke_interval_avg_ms"</span>: <span class="num">260</span>,
+    <span class="key">"mouse_movement_pattern"</span>: <span class="str">"NORMAL"</span>,
+    <span class="key">"focus_switch_count"</span>:     <span class="num">1</span>,
+    <span class="key">"rapid_click_flag"</span>:       <span class="kw">false</span>
+  },
+
+  <span class="key">"api_call"</span>: {
+    <span class="key">"endpoint"</span>:    <span class="str">"/api/v1/merchants/create"</span>,
+    <span class="key">"method"</span>:      <span class="str">"POST"</span>,
+    <span class="key">"status_code"</span>: <span class="num">201</span>,
+    <span class="key">"duration_ms"</span>: <span class="num">640</span>,
+    <span class="key">"retry_count"</span>: <span class="num">0</span>
+  },
+
+  <span class="key">"device"</span>: {
+    <span class="key">"ip_address"</span>:       <span class="str">"[masked]"</span>,
+    <span class="key">"user_agent"</span>:       <span class="str">"Chrome 120"</span>,
+    <span class="key">"screen_resolution"</span>: <span class="str">"1920x1080"</span>,
+    <span class="key">"timezone"</span>:         <span class="str">"Asia/Kolkata"</span>
+  },
+
+  <span class="key">"risk_analysis"</span>: {
+    <span class="key">"risk_score"</span>:      <span class="num">5</span>,
+    <span class="key">"risk_flags"</span>:      [],
+    <span class="key">"anomaly_detected"</span>: <span class="kw">false</span>
+  },
+
+  <span class="key">"compliance"</span>: {
+    <span class="key">"data_residency"</span>:     <span class="str">"IN"</span>,
+    <span class="key">"pii_exposed"</span>:        <span class="kw">false</span>,
+    <span class="key">"log_integrity_hash"</span>: <span class="str">"sha256-merchantcreate-xyz789"</span>
+  }
+}
+</pre>
+</div>
+
+
+<!-- ============================================================ S14: COMPLIANCE -->
+<div class="section" id="s14">
+  <h2><span class="sec-num">14</span> Compliance &amp; Security Controls</h2>
+  <ul>
+    <li>No raw PII stored — sensitive fields masked before persistence</li>
+    <li>SHA256 integrity hash per log (verified on ingestion)</li>
+    <li>Immutable archive in S3 (Object Lock / WORM)</li>
+    <li>Audit trail retention: 7 years (regulatory compliance)</li>
+    <li>HTTPS only — no plaintext transmission</li>
+    <li>Role-based access control (RBAC) on all storage layers</li>
+    <li>Service-to-service authentication via mTLS</li>
+    <li>Daily snapshot + weekly offline backup</li>
+    <li>OpenTelemetry trace correlation for full request lineage</li>
+  </ul>
+</div>
+
+
+<!-- ============================================================ S15: ON-PREM -->
+<div class="section" id="s15">
+  <h2><span class="sec-num">15</span> On-Prem Microservice Deployment</h2>
+  <pre>
+Application Services
+        ↓
+Log Ingestion API  (Microservice)
+        ↓
+Message Broker  (Kafka / RabbitMQ)
+        ↓
+─────────────────────────────────────────────
+│           Processing Layer                │
+│-------------------------------------------│
+│  1. Log Processor Worker                  │
+│  2. Risk Scoring Engine                   │
+│  3. Rule Evaluation Engine                │
+│  4. Alert Dispatcher Service              │
+│  5. Case Management Service               │
+─────────────────────────────────────────────
+        ↓
+Storage Layer
+   ├── MySQL         (Hot Searchable Logs)
+   ├── Elasticsearch (Optional SIEM Index)
+   └── Archive Svc   → NAS / NFS / MinIO
+</pre>
+
+  <h3>On-Prem Archive Structure</h3>
+  <pre>
+/mms/log-archive/
+   └── YYYY/
+       └── MM/
+           └── DD/
+               └── user_id/
+                   └── 10_11.json.gz
+</pre>
+
+  <h3>Core Microservices</h3>
+  <ul>
+    <li><strong>Log Ingestion Service</strong> — receives batched logs from all application clients</li>
+    <li><strong>Queue Broker</strong> — asynchronous, fault-tolerant processing</li>
+    <li><strong>Risk Engine</strong> — applies severity matrix (Impact × Likelihood)</li>
+    <li><strong>Rule Engine</strong> — evaluates configurable fraud rules against each event</li>
+    <li><strong>Alert Service</strong> — dispatches Email / SMS / Webhook notifications</li>
+    <li><strong>Case Management</strong> — opens and tracks fraud investigation tickets</li>
+    <li><strong>Archive Service</strong> — compresses and writes immutable logs to NAS / MinIO</li>
+  </ul>
+
+  <h3>Security &amp; Compliance Controls</h3>
+  <ul>
+    <li>Immutable write — append-only storage (WORM)</li>
+    <li>SHA256 integrity verification per log</li>
+    <li>RBAC — role-based access control</li>
+    <li>mTLS — service-to-service authentication</li>
+    <li>RAID storage redundancy</li>
+    <li>Daily snapshot + weekly offline backup</li>
+  </ul>
+</div>
+
+
+<!-- ============================================================ S16: VOLUME & COST -->
+<div class="section" id="s16">
+  <h2><span class="sec-num">16</span> Log Volume &amp; AWS Cost Analysis</h2>
+  <pre>
+<span class="kw">Volume Assumptions:</span>
+  Users                  100
+  Logs per user per day   50
+  Total daily logs     5,000
+  Average log size       3 KB
+  Daily data            15 MB
+  Monthly data         450 MB
+  Yearly data            5.4 GB
+</pre>
+
+  <h3>Option 1 — MySQL (RDS db.t3.micro, Mumbai)</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>Monthly Cost</th><th>Yearly Estimate</th></tr></thead>
+      <tbody>
+        <tr><td>RDS db.t3.micro</td><td>₹1,500 – ₹2,000</td><td>—</td></tr>
+        <tr><td>Storage (10 GB)</td><td>₹80 – ₹120</td><td>—</td></tr>
+        <tr><td>Backup</td><td>₹150</td><td>—</td></tr>
+        <tr><td><strong>Total</strong></td><td><strong>₹1,800 – ₹2,300</strong></td><td><strong>₹22,000 – ₹27,000</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Option 2 — S3 Cold Archive</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>Monthly Cost</th><th>Yearly Estimate</th></tr></thead>
+      <tbody>
+        <tr><td>S3 Storage (~0.45 GB)</td><td>₹10 – ₹15</td><td>—</td></tr>
+        <tr><td>Requests</td><td>₹10</td><td>—</td></tr>
+        <tr><td>Transfer</td><td>₹10</td><td>—</td></tr>
+        <tr><td><strong>Total</strong></td><td><strong>₹25 – ₹40</strong></td><td><strong>₹300 – ₹500</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- ============================================================ S17: GIT STRUCTURE -->
+<div class="section" id="s17">
+  <h2><span class="sec-num">17</span> Git Repository Structure</h2>
+  <pre>
+fintech-activity-logging/
+├── <span class="kw">README.md</span>                        <span class="cmt"># Project overview &amp; quick start</span>
+├── <span class="kw">docs/</span>
+│   ├── architecture/
+│   │   ├── Activity_Log_Architecture.html  <span class="cmt"># ← This file</span>
+│   │   ├── dfd-level-0.svg
+│   │   ├── dfd-level-1.svg
+│   │   └── dfd-level-2.svg
+│   ├── api/
+│   │   └── openapi.yaml                   <span class="cmt"># API spec</span>
+│   └── compliance/
+│       └── data-retention-policy.md
+│
+├── <span class="kw">frontend/</span>                            <span class="cmt"># React App</span>
+│   ├── src/
+│   │   ├── logging/
+│   │   │   ├── LogBuilder.js
+│   │   │   ├── IndexedDBQueue.js
+│   │   │   └── SyncWorker.js
+│   │   └── ...
+│   └── package.json
+│
+├── <span class="kw">backend/</span>                             <span class="cmt"># Laravel API</span>
+│   ├── app/
+│   │   ├── Http/Controllers/
+│   │   │   └── ActivityLogController.php
+│   │   ├── Jobs/
+│   │   │   └── ProcessActivityLogBatch.php
+│   │   └── Services/
+│   │       ├── RiskScoringService.php
+│   │       └── AlertDispatcherService.php
+│   ├── database/migrations/
+│   │   └── create_activity_logs_table.php
+│   └── ...
+│
+├── <span class="kw">frm/</span>                                 <span class="cmt"># Fraud Risk Management Microservice</span>
+│   ├── RuleEngine.php
+│   ├── CaseManagement.php
+│   └── config/
+│       └── severity_rules.json
+│
+├── <span class="kw">infrastructure/</span>
+│   ├── docker/
+│   │   └── docker-compose.yml
+│   ├── kafka/
+│   │   └── topics.yaml
+│   └── s3/
+│       └── lifecycle-policy.json
+│
+└── <span class="kw">.gitignore</span>
+</pre>
+
+  <h3>Git Commit Message Convention</h3>
+  <pre>
+<span class="kw">feat:</span>     new feature
+<span class="kw">fix:</span>      bug fix
+<span class="kw">docs:</span>     documentation update
+<span class="kw">refactor:</span> code restructure without behaviour change
+<span class="kw">chore:</span>    build / config changes
+<span class="kw">security:</span> security-related change
+
+<span class="cmt">Examples:</span>
+  feat(logging):     add retry exponential backoff to sync worker
+  fix(frm):          correct risk score threshold for CRITICAL boundary
+  docs(arch):        add DFD Level 2 ingestion pipeline diagram
+  security(api):     add SHA256 integrity hash verification on batch ingest
+</pre>
+</div>
+
+
+<!-- ============================================================ FOOTER -->
+<footer class="site-footer">
+  Fintech Activity Logging Architecture — v2.0 &nbsp;·&nbsp; React · Laravel · MySQL · S3 · Kafka · SIEM &nbsp;·&nbsp; Personal Project Reference
+</footer>
+
+</div><!-- /wrapper -->
+
+<script>
+// Intersection observer for scroll animations
+const sections = document.querySelectorAll('.section');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.05 });
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
